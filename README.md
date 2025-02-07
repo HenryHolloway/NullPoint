@@ -1,3 +1,5 @@
+![nullpoint](https://github.com/user-attachments/assets/a934292a-e31b-4242-a3e5-a847840ef948)
+
 # NullPoint
 
 NullPoint is a Rust-powered distraction blocker that utilizes nftables to block access to specified domains. It's designed to help you stay focused by preventing access to distracting websites at the network level.
@@ -5,7 +7,7 @@ NullPoint is a Rust-powered distraction blocker that utilizes nftables to block 
 ## Features
 
 - **Block Domains**: Easily block specific domains or a list of domains.
-- **Unblock Domains**: Remove domains from the blocklist individually or all at once.
+- **Unblock Cooldown**: Remove domains from the blocklist after a 60-minute cooldown.
 - **View Blocked Domains**: List all currently blocked domains.
 - **Automatic Monitoring**: A systemd service keeps your nftables rules in sync with the blocklist.
 
