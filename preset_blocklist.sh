@@ -50,7 +50,14 @@ if [[ "${user_input,,}" == *"y"* ]]; then
     sudo nullpoint block red.arancia.click
     sudo nullpoint block redlib.reallyaweso.me
     sudo nullpoint block redlib.privacy.com.de
+    sudo nullpoint block eddrit.com
 
     echo "Wow! I didn't even know there were so many places to look at reddit!"
+fi
+
+
+read -p "Block youtube? (y/n): " user_input
+if [[ "${user_input,,}" == *"y"* ]]; then
+    sudo nullpoint block youtube.com
 fi
 

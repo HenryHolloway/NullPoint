@@ -164,7 +164,6 @@ fn block_domain(domain: &str) {
         }
     }
 
-
     println!("Blocking domain: {}", domain);
 
     // Check if the domain is already in the file
@@ -196,25 +195,48 @@ fn block_domain(domain: &str) {
 
     if let Ok(addresses) = addresses {
         for addr in addresses {
-            if let std::net::SocketAddr::V4(ipv4_addr) = addr {
-                let ip = ipv4_addr.ip();
-                // Use drop instead of redirect
-                let rule = format!(
-                    "add rule inet {} {} ip daddr {} drop",
-                    TABLE_NAME, CHAIN_NAME, ip
-                );
-                let result = Command::new("nft")
-                    .args(rule.split_whitespace())
-                    .status();
+            match addr {
+                std::net::SocketAddr::V4(ipv4_addr) => {
+                    let ip = ipv4_addr.ip();
+                    // Use drop instead of redirect
+                    let rule = format!(
+                        "add rule inet {} {} ip daddr {} drop",
+                        TABLE_NAME, CHAIN_NAME, ip
+                    );
+                    let result = Command::new("nft")
+                        .args(rule.split_whitespace())
+                        .status();
 
-                if let Ok(status) = result {
-                    if status.success() {
-                        println!("Successfully blocked IP: {}", ip);
+                    if let Ok(status) = result {
+                        if status.success() {
+                            println!("Successfully blocked IPv4: {}", ip);
+                        } else {
+                            eprintln!("Failed to block IPv4: {}. Status: {:?}", ip, status);
+                        }
                     } else {
-                        eprintln!("Failed to block IP: {}. Status: {:?}", ip, status);
+                        eprintln!("Error executing nft command for IPv4: {}", ip);
                     }
-                } else {
-                    eprintln!("Error executing nft command for IP: {}", ip);
+                }
+                std::net::SocketAddr::V6(ipv6_addr) => {
+                    let ip = ipv6_addr.ip();
+                    // Use drop instead of redirect
+                    let rule = format!(
+                        "add rule inet {} {} ip6 daddr {} drop",
+                        TABLE_NAME, CHAIN_NAME, ip
+                    );
+                    let result = Command::new("nft")
+                        .args(rule.split_whitespace())
+                        .status();
+
+                    if let Ok(status) = result {
+                        if status.success() {
+                            println!("Successfully blocked IPv6: {}", ip);
+                        } else {
+                            eprintln!("Failed to block IPv6: {}. Status: {:?}", ip, status);
+                        }
+                    } else {
+                        eprintln!("Error executing nft command for IPv6: {}", ip);
+                    }
                 }
             }
         }
@@ -225,6 +247,22 @@ fn block_domain(domain: &str) {
 
 fn unblock_domain(domain: &str) {
     println!("Unblocking domain: {}", domain);
+    
+    // Countdown before unblocking
+    println!("Please wait for a 60-minute countdown before the domain is unblocked.");
+    let total_minutes: u64 = 60;
+    let progress_bar_length: usize = 50;
+    for elapsed in 0..=total_minutes {
+        let fraction = elapsed as f64 / total_minutes as f64;
+        let filled_length = (fraction * progress_bar_length as f64).round() as usize;
+        let bar = format!("[{}{}]", "#".repeat(filled_length), " ".repeat(progress_bar_length - filled_length));
+        print!("\r{} {:3.0}% ({} min elapsed)", bar, fraction * 100.0, elapsed);
+        std::io::stdout().flush().expect("Failed to flush stdout");
+        if elapsed < total_minutes {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
+    }
+    println!("\nCountdown complete. Proceeding with unblocking.");
 
     if domain == "all" {
         // Unblock all domains
@@ -285,56 +323,109 @@ fn unblock_domain(domain: &str) {
 
         if let Ok(addresses) = addresses {
             for addr in addresses {
-                if let std::net::SocketAddr::V4(ipv4_addr) = addr {
-                    let ip = ipv4_addr.ip();
+                match addr {
+                    std::net::SocketAddr::V4(ipv4_addr) => {
+                        let ip = ipv4_addr.ip();
+                        // List rules with handles for IPv4
+                        let list_result = Command::new("nft")
+                            .args(&["-a", "list", "chain", "inet", TABLE_NAME, CHAIN_NAME])
+                            .output();
 
-                    // List rules with handles, correcting the argument order
-                    let list_result = Command::new("nft")
-                        .args(&["-a", "list", "chain", "inet", TABLE_NAME, CHAIN_NAME])
-                        .output();
+                        match list_result {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout);
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                println!("Current rules:\n{}", stdout); // Debugging output
+                                if !stderr.is_empty() {
+                                    eprintln!("Error listing rules: {}", stderr); // Capture any errors
+                                }
 
-                    match list_result {
-                        Ok(output) => {
-                            let stdout = String::from_utf8_lossy(&output.stdout);
-                            let stderr = String::from_utf8_lossy(&output.stderr);
-                            println!("Current rules:\n{}", stdout); // Debugging output
-                            if !stderr.is_empty() {
-                                eprintln!("Error listing rules: {}", stderr); // Capture any errors
-                            }
+                                for line in stdout.lines() {
+                                    if line.contains(&format!("ip daddr {} drop", ip)) {
+                                        println!("Found rule for IPv4: {}", ip); // Debugging output
 
-                            for line in stdout.lines() {
-                                if line.contains(&format!("ip daddr {} drop", ip)) {
-                                    println!("Found rule for IP: {}", ip); // Debugging output
+                                        // Extract the handle, which is typically a number after "handle"
+                                        if let Some(handle_pos) = line.find("handle") {
+                                            let handle = line[handle_pos + 7..].trim();
+                                            if handle.chars().all(char::is_numeric) {
+                                                println!("Found handle: {}", handle); // Debugging output
 
-                                    // Extract the handle, which is typically a number after "handle"
-                                    if let Some(handle_pos) = line.find("handle") {
-                                        let handle = line[handle_pos + 7..].trim();
-                                        if handle.chars().all(char::is_numeric) {
-                                            println!("Found handle: {}", handle); // Debugging output
+                                                // Delete rule by handle
+                                                let delete_result = Command::new("nft")
+                                                    .args(&[
+                                                        "delete", "rule", "inet", TABLE_NAME, CHAIN_NAME, "handle", handle,
+                                                    ])
+                                                    .status();
 
-                                            // Delete rule by handle
-                                            let delete_result = Command::new("nft")
-                                                .args(&[
-                                                    "delete", "rule", "inet", TABLE_NAME, CHAIN_NAME, "handle", handle,
-                                                ])
-                                                .status();
-
-                                            if delete_result.is_err() || !delete_result.unwrap().success() {
-                                                eprintln!("Failed to unblock IP: {}", ip);
+                                                if delete_result.is_err() || !delete_result.unwrap().success() {
+                                                    eprintln!("Failed to unblock IPv4: {}", ip);
+                                                } else {
+                                                    println!("Successfully unblocked IPv4: {}", ip);
+                                                }
                                             } else {
-                                                println!("Successfully unblocked IP: {}", ip);
+                                                eprintln!("Failed to find numeric handle for IPv4: {}", ip);
                                             }
                                         } else {
-                                            eprintln!("Failed to find numeric handle for IP: {}", ip);
+                                            eprintln!("Failed to find handle for IPv4: {}", ip);
                                         }
-                                    } else {
-                                        eprintln!("Failed to find handle for IP: {}", ip);
                                     }
                                 }
                             }
+                            Err(e) => {
+                                eprintln!("Failed to execute nft command: {}", e);
+                            }
                         }
-                        Err(e) => {
-                            eprintln!("Failed to execute nft command: {}", e);
+                    },
+                    std::net::SocketAddr::V6(ipv6_addr) => {
+                        let ip = ipv6_addr.ip();
+                        // List rules with handles for IPv6
+                        let list_result = Command::new("nft")
+                            .args(&["-a", "list", "chain", "inet", TABLE_NAME, CHAIN_NAME])
+                            .output();
+
+                        match list_result {
+                            Ok(output) => {
+                                let stdout = String::from_utf8_lossy(&output.stdout);
+                                let stderr = String::from_utf8_lossy(&output.stderr);
+                                println!("Current rules:\n{}", stdout); // Debugging output
+                                if !stderr.is_empty() {
+                                    eprintln!("Error listing rules: {}", stderr); // Capture any errors
+                                }
+
+                                for line in stdout.lines() {
+                                    if line.contains(&format!("ip6 daddr {} drop", ip)) {
+                                        println!("Found rule for IPv6: {}", ip); // Debugging output
+
+                                        // Extract the handle, which is typically a number after "handle"
+                                        if let Some(handle_pos) = line.find("handle") {
+                                            let handle = line[handle_pos + 7..].trim();
+                                            if handle.chars().all(char::is_numeric) {
+                                                println!("Found handle: {}", handle); // Debugging output
+
+                                                // Delete rule by handle
+                                                let delete_result = Command::new("nft")
+                                                    .args(&[
+                                                        "delete", "rule", "inet", TABLE_NAME, CHAIN_NAME, "handle", handle,
+                                                    ])
+                                                    .status();
+
+                                                if delete_result.is_err() || !delete_result.unwrap().success() {
+                                                    eprintln!("Failed to unblock IPv6: {}", ip);
+                                                } else {
+                                                    println!("Successfully unblocked IPv6: {}", ip);
+                                                }
+                                            } else {
+                                                eprintln!("Failed to find numeric handle for IPv6: {}", ip);
+                                            }
+                                        } else {
+                                            eprintln!("Failed to find handle for IPv6: {}", ip);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to execute nft command: {}", e);
+                            }
                         }
                     }
                 }
@@ -383,18 +474,25 @@ fn list_blocked_domains() {
     }
 
     // Read the domain names from the file
-    let file = File::open(BLOCKED_DOMAINS_PATH);
-    if let Ok(file) = file {
+    if let Ok(file) = File::open(BLOCKED_DOMAINS_PATH) {
         let reader = BufReader::new(file);
-        let mut stdout = io::stdout();
-        writeln!(stdout, "Blocked domains:").unwrap();
-        for line in reader.lines() {
-            if let Ok(domain) = line {
-                writeln!(stdout, "Blocked Domain: {}", domain).unwrap();
+        let domains: Vec<String> = reader.lines()
+            .filter_map(Result::ok)
+            .collect();
+
+        println!("Blocked domains:");
+
+        if domains.is_empty() || (domains.len() == 1 && domains[0].trim().is_empty()) {
+            println!("No domains are currently blocked");
+        } else {
+            for domain in domains {
+                if !domain.trim().is_empty() {
+                    println!("Blocked Domain: {}", domain);
+                }
             }
         }
     } else {
-        eprintln!("Failed to open blocked_domains or no domains are blocked.");
+        eprintln!("Failed to open blocked_domains.");
     }
 }
 
