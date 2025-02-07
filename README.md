@@ -1,4 +1,7 @@
-![nullpoint](https://github.com/user-attachments/assets/a934292a-e31b-4242-a3e5-a847840ef948)
+<div align="center">
+<img alt="NullPoint" src="[https://github.com/HenryHolloway/MythMaker/blob/main/assets/TheMythMaker.png](https://github.com/user-attachments/assets/a934292a-e31b-4242-a3e5-a847840ef948)" width="200">
+</div>
+
 
 # NullPoint
 
