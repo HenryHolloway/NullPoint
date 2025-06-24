@@ -419,22 +419,25 @@ fn list_blocked_domains() {
 }
 
 fn monitor_blocked_domains_file() {
-    // Ensure the table and chain exist, create them if they don't
-    let table_check = Command::new("nft")
+    let table_ok = Command::new("nft")
         .args(&["list", "table", "inet", TABLE_NAME])
-        .status();
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
 
-    if table_check.is_err() || !table_check.unwrap().success() {
+    if !table_ok {
         let _ = Command::new("nft")
             .args(&["add", "table", "inet", TABLE_NAME])
             .status();
     }
 
-    let chain_check = Command::new("nft")
+    let chain_ok = Command::new("nft")
         .args(&["list", "chain", "inet", TABLE_NAME, CHAIN_NAME])
-        .status();
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
 
-    if chain_check.is_err() || !chain_check.unwrap().success() {
+    if !chain_ok {
         let _ = Command::new("nft")
             .args(&[
                 "add", "chain", "inet", TABLE_NAME, CHAIN_NAME,
@@ -443,28 +446,42 @@ fn monitor_blocked_domains_file() {
             .status();
     }
 
-    // --- simplified: we just attempt to add every resolved address ---------
+    if !check_set_exists(SET_V4_NAME) {
+        create_set(SET_V4_NAME, "ipv4_addr");
+    }
+    if !check_set_exists(SET_V6_NAME) {
+        create_set(SET_V6_NAME, "ipv6_addr");
+    }
+
+    let _ = Command::new("nft")
+        .args(&["flush", "set", "inet", TABLE_NAME, SET_V4_NAME])
+        .status();
+    let _ = Command::new("nft")
+        .args(&["flush", "set", "inet", TABLE_NAME, SET_V6_NAME])
+        .status();
+
+
     if let Ok(file) = File::open(BLOCKED_DOMAINS_PATH) {
         let reader = BufReader::new(file);
         for domain in reader.lines().flatten() {
             if let Ok(addresses) = format!("{}:0", domain).to_socket_addrs() {
                 for addr in addresses {
                     match addr {
-                        std::net::SocketAddr::V4(ipv4_addr) => {
-                            let ip_str = ipv4_addr.ip().to_string();
+                        std::net::SocketAddr::V4(ipv4) => {
+                            let ip = ipv4.ip().to_string();
                             let _ = Command::new("nft")
                                 .args(&[
                                     "add", "element", "inet", TABLE_NAME, SET_V4_NAME,
-                                    "{", &ip_str, "}",
+                                    "{", &ip, "}",
                                 ])
                                 .status();
                         }
-                        std::net::SocketAddr::V6(ipv6_addr) => {
-                            let ip_str = ipv6_addr.ip().to_string();
+                        std::net::SocketAddr::V6(ipv6) => {
+                            let ip = ipv6.ip().to_string();
                             let _ = Command::new("nft")
                                 .args(&[
                                     "add", "element", "inet", TABLE_NAME, SET_V6_NAME,
-                                    "{", &ip_str, "}",
+                                    "{", &ip, "}",
                                 ])
                                 .status();
                         }

@@ -27,7 +27,7 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-EOF'45
+EOF'
   sudo systemctl daemon-reload
   sudo systemctl enable nullpoint
   sudo systemctl start nullpoint
